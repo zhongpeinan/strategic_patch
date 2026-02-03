@@ -1147,48 +1147,7 @@ fn dedup_scalars(list: &mut Vec<Value>) {
 
 ## 11. 实施计划
 
-### Phase 1: 基础框架
-- [ ] 创建 `strategic_patch/` crate 结构
-- [ ] 实现 `error.rs` (Error enum + http_status)
-- [ ] 实现 `schema.rs` (PatchMeta + LookupPatchMeta + EmptySchema)
-- [ ] 实现 `options.rs` (DiffOptions + MergeOptions)
-- [ ] 实现 `directives.rs` (常量 + 检测函数)
-
-### Phase 2: Derive 宏
-- [ ] 创建 `strategic_patch_derive/` crate
-- [ ] 实现 `#[derive(PatchSchema)]`
-- [ ] 生成 Schema struct + static + impl
-- [ ] 测试宏生成代码
-
-### Phase 3: 核心算法
-- [ ] 实现 `diff.rs` (diffMaps + diffLists)
-- [ ] 实现 `merge.rs` (mergeMap + mergeSlice)
-- [ ] 实现指令处理 ($patch, $retainKeys)
-- [ ] 单元测试
-
-### Phase 4: 列表操作
-- [ ] 实现 list merge by mergeKey
-- [ ] 实现 $deleteFromPrimitiveList
-- [ ] 实现 $setElementOrder
-- [ ] 实现 sort_merge_lists_by_name
-
-### Phase 5: 高级功能
-- [ ] 实现 three-way merge
-- [ ] 实现 conflict detection
-- [ ] 实现 merge multiple patches
-
-### Phase 6: API 完善
-- [ ] 实现 Layer 1 (Map API)
-- [ ] 实现 Layer 2 (Bytes API)
-- [ ] 实现 Layer 3 (Typed API)
-- [ ] 实现 StrategicPatchResource trait
-
-### Phase 7: 集成与文档
-- [ ] 移植上游测试用例
-- [ ] 集成测试
-- [ ] 在 taibai_api 中集成使用
-- [ ] API 文档
-- [ ] 使用示例
+详细的实施计划已独立为 [implementation_plan.md](implementation_plan.md)。
 
 ---
 
@@ -1196,20 +1155,3 @@ fn dedup_scalars(list: &mut Vec<Value>) {
 
 1. **OpenAPI Schema 支持**：是否作为默认 feature 还是可选？
 2. **CRD 支持**：无 schema 时是否支持 fallback 到 JSON Merge Patch？
-3. **性能基准**：是否需要与 Go 实现做性能对比？
-4. **serde_json 精度**：大整数是否需要特殊处理？
-
----
-
-## 13. 附录：与 v1/v2/v3 的改进点
-
-| 方面 | v1 | v2 | v3 | v4 |
-|------|----|----|----|----|
-| Crate 结构 | 子模块 | 子模块 | 子模块 | **独立 crate** |
-| 上游对齐 | 一般 | 详细 | 引用v2 | 保留v2详细内容 |
-| 代码实现 | 完整但粗糙 | 无 | 无 | 设计+关键实现 |
-| API 层次 | 单层 | bytes+map | +typed | 三层架构明确 |
-| Schema 获取 | derive | derive+静态 | +Resource trait | 完整设计 |
-| 错误处理 | 基础 | 完整 | +http_status | 保留+增强 |
-| 测试策略 | 有 | 有 | 简略 | 分层详细 |
-| 实施计划 | 按周 | 按步骤 | 无 | 按Phase |
