@@ -81,96 +81,135 @@ Typed merge will apply `T::preconditions()` to the incoming patch before merging
 
 ```rust
 use serde::{Deserialize, Serialize};
-use strategic_patch::{strategic_merge_patch_typed, StrategicPatchResource};
+use strategic_patch::{create_two_way_merge_patch, strategic_merge_patch_typed, PatchSchema};
 
-#[derive(Clone, Debug, Serialize, Deserialize, StrategicPatchResource)]
-struct MyType {
-    a: i32,
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, PatchSchema)]
+struct Container {
+    name: String,
+    image: String,
 }
 
-let original = MyType { a: 1 };
-let patch = br#"{"a":2}"#;
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, PatchSchema)]
+struct PodSpec {
+    #[patch(strategy = "merge", merge_key = "name")]
+    containers: Vec<Container>,
+    restart_policy: Option<String>,
+}
+
+let original = PodSpec {
+    containers: vec![
+        Container {
+            name: "web".to_string(),
+            image: "nginx:1.25".to_string(),
+        },
+        Container {
+            name: "sidecar".to_string(),
+            image: "busybox:1.36".to_string(),
+        },
+    ],
+    restart_policy: Some("Always".to_string()),
+};
+
+let modified = PodSpec {
+    containers: vec![
+        Container {
+            name: "web".to_string(),
+            image: "nginx:1.26".to_string(),
+        },
+        Container {
+            name: "sidecar".to_string(),
+            image: "busybox:1.36".to_string(),
+        },
+        Container {
+            name: "metrics".to_string(),
+            image: "prometheus:2.52".to_string(),
+        },
+    ],
+    restart_policy: Some("Always".to_string()),
+};
+
+let orig_bytes = serde_json::to_vec(&original)?;
+let mod_bytes = serde_json::to_vec(&modified)?;
+let patch = create_two_way_merge_patch(&orig_bytes, &mod_bytes, PodSpec::schema())?;
 let merged = strategic_merge_patch_typed(&original, patch)?;
-assert_eq!(merged.a, 2);
+assert_eq!(merged, modified);
 ```
 
-## Realistic Example (PodSpec-like)
+## Realistic Example (PodSpec-like, derive)
 
 This example uses a list merge by `name` (like `containers` in Kubernetes).
 
 ```rust
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use strategic_patch::{
-    create_three_way_merge_map_patch, create_two_way_merge_map_patch,
-    strategic_merge_map_patch, EmptySchema, LookupPatchMeta, PatchMeta, PatchStrategy,
+    create_three_way_merge_patch, create_two_way_merge_patch, strategic_merge_patch_typed,
+    PatchSchema,
 };
 
-#[derive(Clone, Debug)]
-struct PodSpecSchema;
-
-impl LookupPatchMeta for PodSpecSchema {
-    fn lookup_struct_meta(
-        &self,
-        _key: &str,
-    ) -> strategic_patch::Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
-        Ok((Box::new(EmptySchema), PatchMeta::default()))
-    }
-
-    fn lookup_slice_meta(
-        &self,
-        key: &str,
-    ) -> strategic_patch::Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
-        if key == "containers" {
-            Ok((
-                Box::new(EmptySchema),
-                PatchMeta {
-                    strategies: vec![PatchStrategy::Merge],
-                    merge_key: Some("name".to_string()),
-                },
-            ))
-        } else {
-            Ok((Box::new(EmptySchema), PatchMeta::default()))
-        }
-    }
-
-    fn name(&self) -> &str {
-        "PodSpec"
-    }
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, PatchSchema)]
+struct Container {
+    name: String,
+    image: String,
 }
 
-// Map API: two-way diff + apply
-let original = json!({
-    "containers": [
-        {"name": "web", "image": "nginx:1.25"},
-        {"name": "sidecar", "image": "busybox:1.36"}
-    ]
-}).as_object().unwrap().clone();
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, PatchSchema)]
+struct PodSpec {
+    #[patch(strategy = "merge", merge_key = "name")]
+    containers: Vec<Container>,
+}
 
-let modified = json!({
-    "containers": [
-        {"name": "web", "image": "nginx:1.26"},
-        {"name": "sidecar", "image": "busybox:1.36"}
-    ]
-}).as_object().unwrap().clone();
+let original = PodSpec {
+    containers: vec![
+        Container {
+            name: "web".to_string(),
+            image: "nginx:1.25".to_string(),
+        },
+        Container {
+            name: "sidecar".to_string(),
+            image: "busybox:1.36".to_string(),
+        },
+    ],
+};
 
-let patch = create_two_way_merge_map_patch(&original, &modified, &PodSpecSchema)?;
-let merged = strategic_merge_map_patch(&original, &patch, &PodSpecSchema)?;
+let modified = PodSpec {
+    containers: vec![
+        Container {
+            name: "web".to_string(),
+            image: "nginx:1.26".to_string(),
+        },
+        Container {
+            name: "sidecar".to_string(),
+            image: "busybox:1.36".to_string(),
+        },
+    ],
+};
+
+let current = PodSpec {
+    containers: vec![
+        Container {
+            name: "web".to_string(),
+            image: "nginx:1.27".to_string(), // changed elsewhere
+        },
+        Container {
+            name: "sidecar".to_string(),
+            image: "busybox:1.36".to_string(),
+        },
+    ],
+};
+
+let orig_bytes = serde_json::to_vec(&original)?;
+let mod_bytes = serde_json::to_vec(&modified)?;
+let curr_bytes = serde_json::to_vec(&current)?;
+
+let patch = create_two_way_merge_patch(&orig_bytes, &mod_bytes, PodSpec::schema())?;
+let merged = strategic_merge_patch_typed(&original, patch)?;
 assert_eq!(merged, modified);
 
-// Three-way: detect conflict when current diverges
-let current = json!({
-    "containers": [
-        {"name": "web", "image": "nginx:1.27"}, // changed elsewhere
-        {"name": "sidecar", "image": "busybox:1.36"}
-    ]
-}).as_object().unwrap().clone();
-
-let err = create_three_way_merge_map_patch(
-    &original,
-    &modified,
-    &current,
-    &PodSpecSchema,
+let err = create_three_way_merge_patch(
+    &orig_bytes,
+    &mod_bytes,
+    &curr_bytes,
+    PodSpec::schema(),
     false,
 ).expect_err("conflict expected");
 assert!(matches!(err, strategic_patch::Error::Conflict { .. }));
