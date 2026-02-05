@@ -9,6 +9,29 @@ use strategic_patch::{
 };
 
 #[derive(Clone, Debug)]
+struct TopLevelSchema;
+
+impl LookupPatchMeta for TopLevelSchema {
+    fn lookup_struct_meta(
+        &self,
+        _key: &str,
+    ) -> strategic_patch::Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
+        Ok((Box::new(EmptySchema), PatchMeta::default()))
+    }
+
+    fn lookup_slice_meta(
+        &self,
+        _key: &str,
+    ) -> strategic_patch::Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
+        Ok((Box::new(EmptySchema), PatchMeta::default()))
+    }
+
+    fn name(&self) -> &str {
+        "TopLevelSchema"
+    }
+}
+
+#[derive(Clone, Debug)]
 struct MergeItemSchema;
 
 impl LookupPatchMeta for MergeItemSchema {
@@ -169,7 +192,7 @@ fn test_apply_two_way_patch_merge_list() {
 fn test_delete_null_field() {
     let original = json!({"a": 1, "b": 2}).as_object().unwrap().clone();
     let patch = json!({"b": null}).as_object().unwrap().clone();
-    let merged = strategic_merge_map_patch(&original, &patch, &EmptySchema).expect("merge ok");
+    let merged = strategic_merge_map_patch(&original, &patch, &TopLevelSchema).expect("merge ok");
     let expected = json!({"a": 1}).as_object().unwrap().clone();
     assert_eq!(merged, expected);
 }
@@ -183,7 +206,7 @@ fn test_three_way_conflict() {
         &original,
         &modified,
         &current,
-        &EmptySchema,
+        &TopLevelSchema,
         false,
     )
     .expect_err("conflict expected");
@@ -241,7 +264,7 @@ fn test_diff_handles_patch_directive_marker() {
         .as_object()
         .unwrap()
         .clone();
-    let patch = create_two_way_merge_map_patch(&original, &modified, &EmptySchema)
+    let patch = create_two_way_merge_map_patch(&original, &modified, &TopLevelSchema)
         .expect("patch ok");
     let expected = json!({"$patch": "replace"}).as_object().unwrap().clone();
     assert_eq!(patch, expected);
@@ -254,7 +277,7 @@ fn test_retain_keys_directive_map() {
         .as_object()
         .unwrap()
         .clone();
-    let merged = strategic_merge_map_patch(&original, &patch, &EmptySchema).expect("merge ok");
+    let merged = strategic_merge_map_patch(&original, &patch, &TopLevelSchema).expect("merge ok");
     let expected = json!({"a": 1, "c": 3}).as_object().unwrap().clone();
     assert_eq!(merged, expected);
 }
@@ -269,7 +292,7 @@ fn test_delete_from_primitive_list_directive() {
         .as_object()
         .unwrap()
         .clone();
-    let merged = strategic_merge_map_patch(&original, &patch, &EmptySchema).expect("merge ok");
+    let merged = strategic_merge_map_patch(&original, &patch, &TopLevelSchema).expect("merge ok");
     let expected = json!({"args": ["--a", "--c"]}).as_object().unwrap().clone();
     assert_eq!(merged, expected);
 }
