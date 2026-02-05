@@ -55,7 +55,7 @@ fn test_derive_podspec_merge_by_name() {
     let patch = create_two_way_merge_patch(&orig_bytes, &mod_bytes, PodSpec::schema())
         .expect("create patch");
 
-    let merged = strategic_merge_patch_typed(&original, patch).expect("merge ok");
+    let merged = strategic_merge_patch_typed(&original, &patch).expect("merge ok");
 
     assert_eq!(merged, modified);
 }
