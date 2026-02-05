@@ -1147,7 +1147,7 @@ fn dedup_scalars(list: &mut Vec<Value>) {
 
 ## 11. 实施计划
 
-详细的实施计划已独立为 [implementation_plan.md](implementation_plan.md)。
+详细的实施计划已独立为 [implementation_plan](implementation_plan.md)。
 
 ---
 
