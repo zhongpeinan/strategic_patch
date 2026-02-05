@@ -1,14 +1,31 @@
-[package]
-name = "strategic_patch"
+[workspace]
+resolver = "2"
+members = ["derive"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "extra-traits"] }
 indexmap = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-strategic_patch_derive = { path = "../strategic_patch_derive", optional = true }
 thiserror = "1.0"
+
+[package]
+name = "strategic_patch"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+indexmap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strategic_patch_derive = { path = "./derive", optional = true }
+thiserror.workspace = true
 
 [features]
 default = []
