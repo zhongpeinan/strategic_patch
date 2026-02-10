@@ -29,7 +29,10 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
     };
 
     // Gap 1: Parse struct-level serde rename_all
-    let rename_all = parse_serde_rename_all(&input.attrs);
+    let rename_all = match parse_serde_rename_all(&input.attrs) {
+        Ok(v) => v,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     // Gap 5: Parse struct-level patch(gvk)
     let gvk = match parse_struct_patch_attrs(&input.attrs) {
@@ -56,12 +59,16 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
         }
 
         // Gap 1: Determine the JSON field name using serde rename / rename_all
-        let field_name = if let Some(explicit) = parse_serde_field_rename(&field.attrs) {
-            explicit
-        } else if let Some(ref strategy) = rename_all {
-            apply_rename_all(&field_ident.to_string(), strategy)
-        } else {
-            field_ident.to_string()
+        let field_name = match parse_serde_field_rename(&field.attrs) {
+            Ok(Some(explicit)) => explicit,
+            Ok(None) => {
+                if let Some(ref strategy) = rename_all {
+                    apply_rename_all(&field_ident.to_string(), strategy)
+                } else {
+                    field_ident.to_string()
+                }
+            }
+            Err(err) => return err.to_compile_error().into(),
         };
 
         let meta_expr = parsed.meta_expr;
@@ -161,40 +168,40 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
 
 // --- Gap 1: serde rename support ---
 
-fn parse_serde_rename_all(attrs: &[syn::Attribute]) -> Option<String> {
+fn parse_serde_rename_all(attrs: &[syn::Attribute]) -> Result<Option<String>, syn::Error> {
     for attr in attrs.iter().filter(|a| a.path().is_ident("serde")) {
         let mut result = None;
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("rename_all") {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
                 result = Some(lit.value());
             }
             Ok(())
-        });
+        })?;
         if result.is_some() {
-            return result;
+            return Ok(result);
         }
     }
-    None
+    Ok(None)
 }
 
-fn parse_serde_field_rename(attrs: &[syn::Attribute]) -> Option<String> {
+fn parse_serde_field_rename(attrs: &[syn::Attribute]) -> Result<Option<String>, syn::Error> {
     for attr in attrs.iter().filter(|a| a.path().is_ident("serde")) {
         let mut result = None;
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("rename") {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
                 result = Some(lit.value());
             }
             Ok(())
-        });
+        })?;
         if result.is_some() {
-            return result;
+            return Ok(result);
         }
     }
-    None
+    Ok(None)
 }
 
 fn apply_rename_all(name: &str, strategy: &str) -> String {
