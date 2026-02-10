@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, PathArguments, Type};
+use syn::{Data, DeriveInput, Fields, PathArguments, Type, parse_macro_input};
 
 #[proc_macro_derive(PatchSchema, attributes(patch))]
 pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
@@ -28,6 +28,15 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
         }
     };
 
+    // Gap 1: Parse struct-level serde rename_all
+    let rename_all = parse_serde_rename_all(&input.attrs);
+
+    // Gap 5: Parse struct-level patch(gvk)
+    let gvk = match parse_struct_patch_attrs(&input.attrs) {
+        Ok(g) => g,
+        Err(err) => return err.to_compile_error().into(),
+    };
+
     let mut match_arms = Vec::new();
     let mut has_field_arms = Vec::new();
 
@@ -36,14 +45,35 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
             Some(id) => id,
             None => continue,
         };
-        let field_name = field_ident.to_string();
-        let meta_expr = match build_patch_meta(&field.attrs) {
-            Ok(value) => value,
+
+        // Gap 2: Parse patch attributes (skip, leaf, strategy, merge_key)
+        let parsed = match parse_patch_attrs(&field.attrs) {
+            Ok(v) => v,
             Err(err) => return err.to_compile_error().into(),
         };
-        let (base_ty, is_vec) = unwrap_container_types(&field.ty);
-        let schema_ty = if is_vec { &base_ty } else { &base_ty };
-        let schema_expr = schema_expr_for_type(schema_ty);
+        if parsed.skip {
+            continue;
+        }
+
+        // Gap 1: Determine the JSON field name using serde rename / rename_all
+        let field_name = if let Some(explicit) = parse_serde_field_rename(&field.attrs) {
+            explicit
+        } else if let Some(ref strategy) = rename_all {
+            apply_rename_all(&field_ident.to_string(), strategy)
+        } else {
+            field_ident.to_string()
+        };
+
+        let meta_expr = parsed.meta_expr;
+        let (base_ty, _is_vec) = unwrap_container_types(&field.ty);
+        let schema_ty = &base_ty;
+
+        // Gap 4: Use leaf flag to override schema expression
+        let schema_expr = if parsed.leaf || is_primitive_type(schema_ty) {
+            quote! { ::strategic_patch::schema::EmptySchema }
+        } else {
+            quote! { <#schema_ty as ::strategic_patch::schema::StrategicPatchResource>::schema().clone() }
+        };
 
         match_arms.push(quote! {
             #field_name => Ok((Box::new(#schema_expr), #meta_expr)),
@@ -52,6 +82,17 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
             #field_name => true,
         });
     }
+
+    // Gap 5: Generate gvk() override when present
+    let gvk_impl = if let Some(gvk_str) = gvk {
+        quote! {
+            fn gvk() -> Option<&'static str> {
+                Some(#gvk_str)
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     let expanded = quote! {
         #[derive(Clone, Debug)]
@@ -104,6 +145,8 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
             fn schema() -> &'static Self::Schema {
                 &#schema_static_ident
             }
+
+            #gvk_impl
         }
 
         impl #ident {
@@ -116,13 +159,111 @@ pub fn derive_patch_schema(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn build_patch_meta(attrs: &[syn::Attribute]) -> Result<proc_macro2::TokenStream, syn::Error> {
+// --- Gap 1: serde rename support ---
+
+fn parse_serde_rename_all(attrs: &[syn::Attribute]) -> Option<String> {
+    for attr in attrs.iter().filter(|a| a.path().is_ident("serde")) {
+        let mut result = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename_all") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                result = Some(lit.value());
+            }
+            Ok(())
+        });
+        if result.is_some() {
+            return result;
+        }
+    }
+    None
+}
+
+fn parse_serde_field_rename(attrs: &[syn::Attribute]) -> Option<String> {
+    for attr in attrs.iter().filter(|a| a.path().is_ident("serde")) {
+        let mut result = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                result = Some(lit.value());
+            }
+            Ok(())
+        });
+        if result.is_some() {
+            return result;
+        }
+    }
+    None
+}
+
+fn apply_rename_all(name: &str, strategy: &str) -> String {
+    match strategy {
+        "camelCase" => to_camel_case(name),
+        "PascalCase" => to_pascal_case(name),
+        "snake_case" => name.to_string(),
+        "SCREAMING_SNAKE_CASE" => name.to_uppercase(),
+        "kebab-case" => name.replace('_', "-"),
+        "SCREAMING-KEBAB-CASE" => name.to_uppercase().replace('_', "-"),
+        _ => name.to_string(),
+    }
+}
+
+fn to_camel_case(name: &str) -> String {
+    let mut result = String::new();
+    for (i, part) in name.split('_').enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 {
+            result.push_str(part);
+        } else {
+            let mut chars = part.chars();
+            if let Some(first) = chars.next() {
+                result.extend(first.to_uppercase());
+                result.push_str(chars.as_str());
+            }
+        }
+    }
+    result
+}
+
+fn to_pascal_case(name: &str) -> String {
+    name.split('_')
+        .filter(|s| !s.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+// --- Gap 2 + 4: Unified patch attribute parsing ---
+
+struct ParsedPatchAttrs {
+    meta_expr: proc_macro2::TokenStream,
+    skip: bool,
+    leaf: bool,
+}
+
+fn parse_patch_attrs(attrs: &[syn::Attribute]) -> Result<ParsedPatchAttrs, syn::Error> {
     let mut strategies: Vec<proc_macro2::TokenStream> = Vec::new();
     let mut merge_key: Option<String> = None;
+    let mut skip = false;
+    let mut leaf = false;
 
     for attr in attrs.iter().filter(|a| a.path().is_ident("patch")) {
         attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("strategy") {
+            if meta.path.is_ident("skip") {
+                skip = true;
+                Ok(())
+            } else if meta.path.is_ident("leaf") {
+                leaf = true;
+                Ok(())
+            } else if meta.path.is_ident("strategy") {
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
                 for part in lit.value().split(',').map(|s| s.trim()) {
@@ -131,9 +272,8 @@ fn build_patch_meta(attrs: &[syn::Attribute]) -> Result<proc_macro2::TokenStream
                             .push(quote! { ::strategic_patch::schema::PatchStrategy::Merge }),
                         "replace" => strategies
                             .push(quote! { ::strategic_patch::schema::PatchStrategy::Replace }),
-                        "retainKeys" => strategies.push(
-                            quote! { ::strategic_patch::schema::PatchStrategy::RetainKeys },
-                        ),
+                        "retainKeys" => strategies
+                            .push(quote! { ::strategic_patch::schema::PatchStrategy::RetainKeys }),
                         "" => {}
                         other => {
                             return Err(syn::Error::new_spanned(
@@ -155,28 +295,52 @@ fn build_patch_meta(attrs: &[syn::Attribute]) -> Result<proc_macro2::TokenStream
         })?;
     }
 
-    if strategies.is_empty() && merge_key.is_none() {
-        return Ok(quote! { ::strategic_patch::schema::PatchMeta::default() });
-    }
-
-    let strategies_expr = if strategies.is_empty() {
-        quote! { Vec::new() }
+    let meta_expr = if strategies.is_empty() && merge_key.is_none() {
+        quote! { ::strategic_patch::schema::PatchMeta::default() }
     } else {
-        quote! { vec![#(#strategies),*] }
-    };
-    let merge_key_expr = if let Some(value) = merge_key {
-        quote! { Some(#value.to_string()) }
-    } else {
-        quote! { None }
-    };
-
-    Ok(quote! {
-        ::strategic_patch::schema::PatchMeta {
-            strategies: #strategies_expr,
-            merge_key: #merge_key_expr,
+        let strategies_expr = if strategies.is_empty() {
+            quote! { Vec::new() }
+        } else {
+            quote! { vec![#(#strategies),*] }
+        };
+        let merge_key_expr = if let Some(value) = merge_key {
+            quote! { Some(#value.to_string()) }
+        } else {
+            quote! { None }
+        };
+        quote! {
+            ::strategic_patch::schema::PatchMeta {
+                strategies: #strategies_expr,
+                merge_key: #merge_key_expr,
+            }
         }
+    };
+
+    Ok(ParsedPatchAttrs {
+        meta_expr,
+        skip,
+        leaf,
     })
 }
+
+// --- Gap 5: struct-level patch attributes ---
+
+fn parse_struct_patch_attrs(attrs: &[syn::Attribute]) -> Result<Option<String>, syn::Error> {
+    let mut gvk = None;
+    for attr in attrs.iter().filter(|a| a.path().is_ident("patch")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("gvk") {
+                let value = meta.value()?;
+                let lit: syn::LitStr = value.parse()?;
+                gvk = Some(lit.value());
+            }
+            Ok(())
+        })?;
+    }
+    Ok(gvk)
+}
+
+// --- Type helpers ---
 
 fn unwrap_container_types(ty: &Type) -> (Type, bool) {
     if let Type::Path(path) = ty {
@@ -206,14 +370,6 @@ fn extract_angle_type(segment: &syn::PathSegment) -> Option<Type> {
     }
 }
 
-fn schema_expr_for_type(ty: &Type) -> proc_macro2::TokenStream {
-    if is_primitive_type(ty) {
-        quote! { ::strategic_patch::schema::EmptySchema }
-    } else {
-        quote! { <#ty as ::strategic_patch::schema::StrategicPatchResource>::schema().clone() }
-    }
-}
-
 fn is_primitive_type(ty: &Type) -> bool {
     match ty {
         Type::Path(path) => {
@@ -235,6 +391,18 @@ fn is_primitive_type(ty: &Type) -> bool {
                         | "f64"
                         | "String"
                         | "str"
+                        // Gap 3: Map types are leaf types
+                        | "BTreeMap"
+                        | "HashMap"
+                        | "IndexMap"
+                        // Gap 4: Common Kubernetes / serde types
+                        | "Timestamp"
+                        | "MicroTime"
+                        | "Quantity"
+                        | "IntOrString"
+                        | "Value"
+                        | "DateTime"
+                        | "ResourceList"
                 )
             } else {
                 false

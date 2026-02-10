@@ -40,9 +40,9 @@ pub fn handle_patch_directive(patch: &JsonMap) -> Result<Option<PatchDirectiveAc
         Some(value) => value,
         None => return Ok(None),
     };
-    let directive_str = directive.as_str().ok_or_else(|| {
-        Error::BadPatchType(format!("expected string, got {directive:?}"))
-    })?;
+    let directive_str = directive
+        .as_str()
+        .ok_or_else(|| Error::BadPatchType(format!("expected string, got {directive:?}")))?;
     match directive_str {
         directive_values::DELETE => Ok(Some(PatchDirectiveAction::Delete)),
         directive_values::REPLACE => Ok(Some(PatchDirectiveAction::Replace)),
@@ -73,22 +73,17 @@ pub fn apply_retain_keys(
         return Ok(());
     }
 
-    let retain_keys = retain_value.as_array().ok_or_else(|| {
-        Error::BadPatchFormatForRetainKeys {
-            path: "".to_string(),
-        }
-    })?;
+    let retain_keys =
+        retain_value
+            .as_array()
+            .ok_or_else(|| Error::BadPatchFormatForRetainKeys {
+                path: "".to_string(),
+            })?;
 
-    let keys_to_retain: HashSet<&str> = retain_keys
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
+    let keys_to_retain: HashSet<&str> = retain_keys.iter().filter_map(|v| v.as_str()).collect();
 
     for (key, value) in patch.iter() {
-        if key == directive_keys::PATCH
-            || is_delete_list_key(key)
-            || is_set_order_key(key)
-        {
+        if key == directive_keys::PATCH || is_delete_list_key(key) || is_set_order_key(key) {
             continue;
         }
         if !value.is_null() && !keys_to_retain.contains(key.as_str()) {
