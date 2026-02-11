@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::directives::{
-    apply_retain_keys, extract_field_from_directive, handle_patch_directive, is_delete_list_key,
-    is_set_order_key, directive_keys, PatchDirectiveAction,
+    PatchDirectiveAction, apply_retain_keys, directive_keys, extract_field_from_directive,
+    handle_patch_directive, is_delete_list_key, is_set_order_key,
 };
 use crate::error::{Error, Result};
 use crate::options::MergeOptions;
@@ -73,7 +73,8 @@ pub(crate) fn merge_maps(
                 if matches!(strategy, Some(PatchStrategy::Replace)) {
                     merged.insert(key, Value::Object(patch_map));
                 } else {
-                    let child = merge_maps(&original_map, &patch_map, child_schema.as_ref(), options)?;
+                    let child =
+                        merge_maps(&original_map, &patch_map, child_schema.as_ref(), options)?;
                     merged.insert(key, Value::Object(child));
                 }
             }
@@ -153,16 +154,9 @@ fn merge_lists(
         let mut applied = false;
         for existing in merged.iter_mut() {
             if let Some(existing_obj) = existing.as_object() {
-                let existing_key = existing_obj
-                    .get(merge_key)
-                    .and_then(|v| v.as_str());
+                let existing_key = existing_obj.get(merge_key).and_then(|v| v.as_str());
                 if existing_key == Some(key_str) {
-                    let merged_obj = merge_maps(
-                        existing_obj,
-                        patch_obj,
-                        schema,
-                        options,
-                    )?;
+                    let merged_obj = merge_maps(existing_obj, patch_obj, schema, options)?;
                     *existing = Value::Object(merged_obj);
                     applied = true;
                     break;
@@ -192,26 +186,27 @@ fn preprocess_delete_from_primitive_lists(
             merged.insert(key.clone(), patch_value);
             continue;
         }
-        let field = extract_field_from_directive(
-            &key,
-            directive_keys::DELETE_FROM_PRIMITIVE_LIST_PREFIX,
-        )
-        .ok_or_else(|| Error::BadPatchFormatForPrimitiveList { path: key.clone() })?;
-        let delete_items = patch_value.as_array().ok_or_else(|| {
-            Error::BadPatchFormatForPrimitiveList {
-                path: field.to_string(),
-            }
-        })?;
-        let target = merged.get_mut(field).ok_or_else(|| {
-            Error::BadPatchFormatForPrimitiveList {
-                path: field.to_string(),
-            }
-        })?;
-        let target_list = target.as_array_mut().ok_or_else(|| {
-            Error::BadPatchFormatForPrimitiveList {
-                path: field.to_string(),
-            }
-        })?;
+        let field =
+            extract_field_from_directive(&key, directive_keys::DELETE_FROM_PRIMITIVE_LIST_PREFIX)
+                .ok_or_else(|| Error::BadPatchFormatForPrimitiveList { path: key.clone() })?;
+        let delete_items =
+            patch_value
+                .as_array()
+                .ok_or_else(|| Error::BadPatchFormatForPrimitiveList {
+                    path: field.to_string(),
+                })?;
+        let target =
+            merged
+                .get_mut(field)
+                .ok_or_else(|| Error::BadPatchFormatForPrimitiveList {
+                    path: field.to_string(),
+                })?;
+        let target_list =
+            target
+                .as_array_mut()
+                .ok_or_else(|| Error::BadPatchFormatForPrimitiveList {
+                    path: field.to_string(),
+                })?;
         target_list.retain(|item| !delete_items.iter().any(|del| del == item));
     }
     Ok(())
@@ -232,9 +227,7 @@ fn merge_set_element_order(
         if !options.merge_parallel_list {
             if let Some(existing) = merged.get(&key) {
                 if existing != &set_order_value {
-                    return Err(Error::BadPatchFormatForSetElementOrderList {
-                        path: key.clone(),
-                    });
+                    return Err(Error::BadPatchFormatForSetElementOrderList { path: key.clone() });
                 }
             } else {
                 merged.insert(key.clone(), set_order_value);
@@ -242,15 +235,11 @@ fn merge_set_element_order(
             continue;
         }
 
-        let order_list = set_order_value.as_array().ok_or_else(|| {
-            Error::BadPatchFormatForSetElementOrderList {
-                path: key.clone(),
-            }
-        })?;
+        let order_list = set_order_value
+            .as_array()
+            .ok_or_else(|| Error::BadPatchFormatForSetElementOrderList { path: key.clone() })?;
         let field = extract_field_from_directive(&key, directive_keys::SET_ELEMENT_ORDER_PREFIX)
-            .ok_or_else(|| Error::BadPatchFormatForSetElementOrderList {
-                path: key.clone(),
-            })?;
+            .ok_or_else(|| Error::BadPatchFormatForSetElementOrderList { path: key.clone() })?;
 
         let original_list = merged.get(field).and_then(|v| v.as_array()).cloned();
         let patch_list = patch.get(field).and_then(|v| v.as_array()).cloned();
@@ -261,23 +250,31 @@ fn merge_set_element_order(
             continue;
         }
 
-        validate_patch_with_set_order_list(patch_list.as_deref(), order_list, meta.merge_key.as_deref())?;
+        validate_patch_with_set_order_list(
+            patch_list.as_deref(),
+            order_list,
+            meta.merge_key.as_deref(),
+        )?;
 
         let merged_list = match (original_list, patch_list) {
             (Some(orig), None) => orig,
-            (None, Some(patch_items)) => {
-                remove_directives(Value::Array(patch_items))
-                    .and_then(|v| v.as_array().cloned())
-                    .unwrap_or_default()
+            (None, Some(patch_items)) => remove_directives(Value::Array(patch_items))
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default(),
+            (Some(orig), Some(patch_items)) => {
+                merge_lists(&orig, &patch_items, subschema.as_ref(), &meta, options)?
             }
-            (Some(orig), Some(patch_items)) => merge_lists(&orig, &patch_items, subschema.as_ref(), &meta, options)?,
             (None, None) => Vec::new(),
         };
 
         let (patch_items, server_only) = if meta.merge_key.is_none() {
             partition_primitives_by_present_in_list(&merged_list, order_list)
         } else {
-            partition_maps_by_present_in_list(&merged_list, order_list, meta.merge_key.as_deref().unwrap())?
+            partition_maps_by_present_in_list(
+                &merged_list,
+                order_list,
+                meta.merge_key.as_deref().unwrap(),
+            )?
         };
 
         let normalized = normalize_element_order(
@@ -319,7 +316,11 @@ fn validate_patch_with_set_order_list(
     let mut patch_index = 0usize;
     let mut set_order_index = 0usize;
     while patch_index < non_delete_list.len() && set_order_index < set_order_list.len() {
-        if merge_key_value_equal(non_delete_list[patch_index], &set_order_list[set_order_index], merge_key)? {
+        if merge_key_value_equal(
+            non_delete_list[patch_index],
+            &set_order_list[set_order_index],
+            merge_key,
+        )? {
             patch_index += 1;
         }
         set_order_index += 1;
@@ -365,7 +366,12 @@ fn normalize_element_order(
 ) -> Result<Vec<Value>> {
     let patch_sorted = normalize_slice_order(patch_items, patch_order, merge_key)?;
     let server_sorted = normalize_slice_order(server_only, server_order, merge_key)?;
-    Ok(merge_sorted_slice(&server_sorted, &patch_sorted, server_order, merge_key))
+    Ok(merge_sorted_slice(
+        &server_sorted,
+        &patch_sorted,
+        server_order,
+        merge_key,
+    ))
 }
 
 fn merge_sorted_slice(
@@ -497,7 +503,9 @@ fn merge_list_with_special_elements(
             patch_without.push(Value::Object(obj.clone()));
             continue;
         };
-        let directive = directive.as_str().ok_or_else(|| Error::BadPatchType(format!("{directive:?}")))?;
+        let directive = directive
+            .as_str()
+            .ok_or_else(|| Error::BadPatchType(format!("{directive:?}")))?;
         match directive {
             "delete" => {
                 let merge_value = obj.get(merge_key).ok_or_else(|| Error::NoMergeKey {
@@ -677,14 +685,8 @@ mod tests {
 
     #[test]
     fn test_patch_delete_directive() {
-        let original = json!({"a": 1, "b": 2})
-            .as_object()
-            .unwrap()
-            .clone();
-        let patch = json!({"$patch": "delete"})
-            .as_object()
-            .unwrap()
-            .clone();
+        let original = json!({"a": 1, "b": 2}).as_object().unwrap().clone();
+        let patch = json!({"$patch": "delete"}).as_object().unwrap().clone();
         let merged = merge_maps(&original, &patch, &EmptySchema, &MergeOptions::default())
             .expect("merge ok");
         assert!(merged.is_empty());
@@ -742,8 +744,8 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        let merged = merge_maps(&original, &patch, &ArgsSchema, &MergeOptions::default())
-            .expect("merge ok");
+        let merged =
+            merge_maps(&original, &patch, &ArgsSchema, &MergeOptions::default()).expect("merge ok");
         let expected = json!({"args": ["b", "c", "a"]})
             .as_object()
             .unwrap()

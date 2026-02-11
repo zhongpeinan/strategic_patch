@@ -92,11 +92,8 @@ pub(crate) fn diff_maps(
                             patch.insert(directive_key, delete_list);
                         }
                         if let Some(set_order) = list_result.set_order {
-                            let directive_key = format!(
-                                "{}/{}",
-                                directive_keys::SET_ELEMENT_ORDER_PREFIX,
-                                key
-                            );
+                            let directive_key =
+                                format!("{}/{}", directive_keys::SET_ELEMENT_ORDER_PREFIX, key);
                             patch.insert(directive_key, set_order);
                         }
                     }
@@ -126,7 +123,10 @@ pub(crate) fn diff_maps(
                 .any(|key| !retain_keys.iter().any(|k| k == key));
         if retain_needed {
             retain_keys.sort_by(|a, b| a.cmp(b));
-            let keys_value = retain_keys.into_iter().map(Value::String).collect::<Vec<_>>();
+            let keys_value = retain_keys
+                .into_iter()
+                .map(Value::String)
+                .collect::<Vec<_>>();
             patch.insert(
                 directive_keys::RETAIN_KEYS.to_string(),
                 Value::Array(keys_value),
@@ -237,7 +237,8 @@ fn build_set_element_order_list_maps(
     if !options.set_element_order {
         return None;
     }
-    let generate = (!options.ignore_changes_and_additions && (!patch_list.is_empty() || !order_same))
+    let generate = (!options.ignore_changes_and_additions
+        && (!patch_list.is_empty() || !order_same))
         || (!options.ignore_deletions && !patch_list.is_empty());
     if !generate {
         return None;
@@ -308,8 +309,8 @@ fn diff_lists_of_maps(
         } else {
             (JsonMap::new(), Value::Null)
         };
-    let original_key_str = merge_key_value_string(&original_key_value, None);
-    let modified_key_str = merge_key_value_string(&modified_key_value, None);
+        let original_key_str = merge_key_value_string(&original_key_value, None);
+        let modified_key_str = merge_key_value_string(&modified_key_value, None);
 
         match compare_list_values_at_index(
             original_in_bounds,

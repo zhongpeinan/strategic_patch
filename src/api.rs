@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::conflict::merging_maps_have_conflicts as conflicts_inner;
 use crate::diff::diff_maps;
@@ -90,7 +90,8 @@ pub fn create_three_way_merge_map_patch(
         let changed = diff_maps(original, current, schema, &DiffOptions::default())?;
         if conflicts_inner(&patch, &changed, schema)? {
             let patch_str = serde_json::to_string(&patch).unwrap_or_else(|_| "<patch>".into());
-            let current_str = serde_json::to_string(&changed).unwrap_or_else(|_| "<current>".into());
+            let current_str =
+                serde_json::to_string(&changed).unwrap_or_else(|_| "<current>".into());
             return Err(Error::Conflict {
                 patch: patch_str,
                 current: current_str,
@@ -131,10 +132,10 @@ pub fn create_two_way_merge_patch(
     modified: &[u8],
     schema: &dyn LookupPatchMeta,
 ) -> Result<Vec<u8>> {
-    let orig: JsonMap = serde_json::from_slice(original)
-        .map_err(|e| Error::BadJsonDoc(e.to_string()))?;
-    let modi: JsonMap = serde_json::from_slice(modified)
-        .map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let orig: JsonMap =
+        serde_json::from_slice(original).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let modi: JsonMap =
+        serde_json::from_slice(modified).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
     let patch = create_two_way_merge_map_patch(&orig, &modi, schema)?;
     Ok(serde_json::to_vec(&patch)?)
 }
@@ -144,10 +145,9 @@ pub fn strategic_merge_patch(
     patch: &[u8],
     schema: &dyn LookupPatchMeta,
 ) -> Result<Vec<u8>> {
-    let orig: JsonMap = serde_json::from_slice(original)
-        .map_err(|e| Error::BadJsonDoc(e.to_string()))?;
-    let p: JsonMap =
-        serde_json::from_slice(patch).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let orig: JsonMap =
+        serde_json::from_slice(original).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let p: JsonMap = serde_json::from_slice(patch).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
     let result = strategic_merge_map_patch(&orig, &p, schema)?;
     Ok(serde_json::to_vec(&result)?)
 }
@@ -159,12 +159,12 @@ pub fn create_three_way_merge_patch(
     schema: &dyn LookupPatchMeta,
     overwrite: bool,
 ) -> Result<Vec<u8>> {
-    let orig: JsonMap = serde_json::from_slice(original)
-        .map_err(|e| Error::BadJsonDoc(e.to_string()))?;
-    let modi: JsonMap = serde_json::from_slice(modified)
-        .map_err(|e| Error::BadJsonDoc(e.to_string()))?;
-    let curr: JsonMap = serde_json::from_slice(current)
-        .map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let orig: JsonMap =
+        serde_json::from_slice(original).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let modi: JsonMap =
+        serde_json::from_slice(modified).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
+    let curr: JsonMap =
+        serde_json::from_slice(current).map_err(|e| Error::BadJsonDoc(e.to_string()))?;
     let patch = create_three_way_merge_map_patch(&orig, &modi, &curr, schema, overwrite)?;
     Ok(serde_json::to_vec(&patch)?)
 }
@@ -215,17 +215,11 @@ mod tests {
     struct TopLevelSchema;
 
     impl LookupPatchMeta for TopLevelSchema {
-        fn lookup_struct_meta(
-            &self,
-            _key: &str,
-        ) -> Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
+        fn lookup_struct_meta(&self, _key: &str) -> Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
             Ok((Box::new(EmptySchema), PatchMeta::default()))
         }
 
-        fn lookup_slice_meta(
-            &self,
-            _key: &str,
-        ) -> Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
+        fn lookup_slice_meta(&self, _key: &str) -> Result<(Box<dyn LookupPatchMeta>, PatchMeta)> {
             Ok((Box::new(EmptySchema), PatchMeta::default()))
         }
 

@@ -4,8 +4,8 @@
 use serde_json::json;
 
 use strategic_patch::{
-    create_three_way_merge_map_patch, create_two_way_merge_map_patch, strategic_merge_map_patch,
     EmptySchema, Error, LookupPatchMeta, PatchMeta, PatchStrategy,
+    create_three_way_merge_map_patch, create_two_way_merge_map_patch, strategic_merge_map_patch,
 };
 
 #[derive(Clone, Debug)]
@@ -140,8 +140,8 @@ fn test_two_way_merge_patch_merge_list() {
     .as_object()
     .unwrap()
     .clone();
-    let patch = create_two_way_merge_map_patch(&original, &modified, &MergeItemSchema)
-        .expect("patch ok");
+    let patch =
+        create_two_way_merge_map_patch(&original, &modified, &MergeItemSchema).expect("patch ok");
     let expected = json!({
         "items": [
             {"name": "a", "value": "2"},
@@ -173,8 +173,7 @@ fn test_apply_two_way_patch_merge_list() {
     .as_object()
     .unwrap()
     .clone();
-    let merged =
-        strategic_merge_map_patch(&original, &patch, &MergeItemSchema).expect("merge ok");
+    let merged = strategic_merge_map_patch(&original, &patch, &MergeItemSchema).expect("merge ok");
     let expected = json!({
         "items": [
             {"name": "a", "value": "2"},
@@ -202,14 +201,9 @@ fn test_three_way_conflict() {
     let original = json!({"a": 1}).as_object().unwrap().clone();
     let modified = json!({"a": 2}).as_object().unwrap().clone();
     let current = json!({"a": 3}).as_object().unwrap().clone();
-    let err = create_three_way_merge_map_patch(
-        &original,
-        &modified,
-        &current,
-        &TopLevelSchema,
-        false,
-    )
-    .expect_err("conflict expected");
+    let err =
+        create_three_way_merge_map_patch(&original, &modified, &current, &TopLevelSchema, false)
+            .expect_err("conflict expected");
     assert!(matches!(err, Error::Conflict { .. }));
 }
 
@@ -223,8 +217,8 @@ fn test_replace_strategy_list() {
         .as_object()
         .unwrap()
         .clone();
-    let patch = create_two_way_merge_map_patch(&original, &modified, &ReplaceListSchema)
-        .expect("patch ok");
+    let patch =
+        create_two_way_merge_map_patch(&original, &modified, &ReplaceListSchema).expect("patch ok");
     let expected = json!({"items": [{"name": "c"}]})
         .as_object()
         .unwrap()
@@ -264,8 +258,8 @@ fn test_diff_handles_patch_directive_marker() {
         .as_object()
         .unwrap()
         .clone();
-    let patch = create_two_way_merge_map_patch(&original, &modified, &TopLevelSchema)
-        .expect("patch ok");
+    let patch =
+        create_two_way_merge_map_patch(&original, &modified, &TopLevelSchema).expect("patch ok");
     let expected = json!({"$patch": "replace"}).as_object().unwrap().clone();
     assert_eq!(patch, expected);
 }
