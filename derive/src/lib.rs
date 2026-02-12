@@ -176,6 +176,10 @@ fn parse_serde_rename_all(attrs: &[syn::Attribute]) -> Result<Option<String>, sy
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
                 result = Some(lit.value());
+            } else if meta.input.peek(syn::Token![=]) {
+                // Consume unknown key=value pairs (e.g., skip_serializing_if = "...")
+                let _value = meta.value()?;
+                let _lit: syn::LitStr = _value.parse()?;
             }
             Ok(())
         })?;
@@ -194,6 +198,10 @@ fn parse_serde_field_rename(attrs: &[syn::Attribute]) -> Result<Option<String>, 
                 let value = meta.value()?;
                 let lit: syn::LitStr = value.parse()?;
                 result = Some(lit.value());
+            } else if meta.input.peek(syn::Token![=]) {
+                // Consume unknown key=value pairs (e.g., skip_serializing_if = "...")
+                let _value = meta.value()?;
+                let _lit: syn::LitStr = _value.parse()?;
             }
             Ok(())
         })?;
